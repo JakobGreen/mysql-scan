@@ -1,54 +1,34 @@
 package main
 
 import (
-	"bytes"
-	"context"
+	"flag"
 	"fmt"
-	"net"
-	"time"
+	"os"
 )
 
-// Get null terminated string
-func read_cstr(buf []byte) string {
-	pos := bytes.IndexByte(buf, 0)
-	if pos == -1 {
-		return string(buf[:])
+var (
+	scanHost    string
+	scanTimeout int
+)
+
+func parseCommandLine() {
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Tool for checking a given host and port for running MySQL\nUsage of %s:\n", os.Args[0])
+		flag.PrintDefaults()
 	}
 
-	return string(buf[:pos])
+	flag.StringVar(&scanHost, "host", "127.0.0.1:3306", "Host and port to test for running MySQL server")
+	flag.IntVar(&scanTimeout, "t", 1, "Dial timeout in seconds")
+	flag.Parse()
 }
 
 func main() {
-	dialer := net.Dialer{}
+	parseCommandLine()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	conn, err := dialer.DialContext(ctx, "tcp", "127.0.0.1:3306")
-	if err != nil {
-		panic(err)
+	if sql, err := DetectMySQL(scanHost, scanTimeout); err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+		os.Exit(1)
+	} else {
+		fmt.Printf("Detected MySQL:\n%s\n", sql.String())
 	}
-	defer conn.Close()
-	defer cancel()
-
-	buf := make([]byte, 1024)
-	for {
-		n, err := conn.Read(buf)
-
-		fmt.Println("Received: ", n)
-		if err != nil {
-			panic(err)
-		}
-
-		if n > 0 {
-			break
-		}
-		time.Sleep(time.Second)
-	}
-
-	pktLen := int(uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16)
-	seq := buf[3]
-
-	fmt.Println("Packet Length: ", pktLen)
-	fmt.Println("Seq: ", seq)
-	fmt.Println("MySQL Protocol: ", buf[4])
-	fmt.Println("MySQL Version: ", read_cstr(buf[5:]))
 }
